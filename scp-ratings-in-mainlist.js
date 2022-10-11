@@ -36,6 +36,20 @@ function ajax(url, callbackSuccess, callbackFail)
 	return true;
 }
 
+function CreateRatingCss()
+{
+	var style = document.createElement('style');
+	style.type = 'text/css';
+	style.innerHTML = '	.rating { position: absolute; top: 0%; right: 0%; } \
+						.rating1 { font-weight: bold; } \
+						.rating2 { font-weight: bold; color: '+RATING2_COLOR+'; } \
+						.ratingHighest { font-weight: bold; color: '+RATINGHIGHEST_COLOR+'; }';
+	
+	document.getElementsByTagName('head')[0].appendChild(style);
+	
+	if (LOGLEVEL >= 2) console.log('Created CSS for rating elements.');
+}
+
 function CreateRatingDisplay(parent, url, headingName, itemNo)
 {
 	parent.style.position = 'relative'; // Needed for absolute positioning
@@ -77,10 +91,14 @@ function CreateRatingDisplay(parent, url, headingName, itemNo)
 	});
 }
 
-function ProcessUl(ul, headingName)
+function ProcessList(ul, itemType, headingName)
 {
-	if (LOGLEVEL >= 1) console.log('Processing ul \''+headingName+'\'...');
-	var items = ul.getElementsByTagName('li'); // This gets the grandchildren as well, so it makes doing the Tales Edition lists far easier
+	/*	This function was originally made for just the normal mainlist pages, so its system of logging
+		based on the header name is a bit clunky for the weirdly set out pages like the Joke SCP list */
+		
+	if (LOGLEVEL >= 1) console.log('Processing heading \''+headingName+'\'...');
+	
+	var items = ul.getElementsByTagName(itemType); // This gets the grandchildren as well, so it makes doing the Tales Edition lists far easier
 	for (var i = 0; i < items.length; i++)
 	{
 		const scpLink = items[i].getElementsByTagName('a')[0];
@@ -97,32 +115,79 @@ function ProcessUl(ul, headingName)
 
 if (LOGLEVEL >= 2) console.log('Content script loaded.');
 
-if (window.location.pathname.match(/^\/scp-series(-[0-9]+)?(-tales-edition)?$/))
+if (window.location.pathname.match(/^\/((scp-series(-[0-9]+)?(-tales-edition)?)|joke-scps(-tales-edition)?|scp-ex|explained-scps-tales-edition|scp-001)$/))
 {
-	if (LOGLEVEL >= 2) console.log('Page is an SCP mainlist page.');
+	if (LOGLEVEL >= 2) console.log('Page is valid for showing ratings.');
 	
-	var style = document.createElement('style');
-	style.type = 'text/css';
-	style.innerHTML = '	.rating { position: absolute; top: 0%; right: 0%; } \
-						.rating1 { font-weight: bold; } \
-						.rating2 { font-weight: bold; color: '+RATING2_COLOR+'; } \
-						.ratingHighest { font-weight: bold; color: '+RATINGHIGHEST_COLOR+'; }';
+	CreateRatingCss();
 	
-	document.getElementsByTagName('head')[0].appendChild(style);
-	
-	for (var i = 1; i < Infinity; i++)
+	/*	This is what happens when there is no standard for how pages should be set out. Now I have to have half a
+		dozen ways to go through each individual page and pick out the listings. */
+	if (window.location.pathname.match(/^\/(scp-series(-[0-9]+)?(-tales-edition)?)|joke-scps-tales-edition|scp-ex|explained-scps-tales-edition$/))
 	{
-		const heading = document.getElementById('toc'+i);
-		if (!heading) break;
+		// This gets the <ul> immediatly following each header
 		
-		var ul = heading.nextElementSibling;
-		if (!ul) break;
-		if (ul.tagName != 'UL') continue;
-		
-		const headingText = heading.getElementsByTagName('span')[0];
-		if (headingText)
-			ProcessUl(ul, headingText.innerHTML);
+		var i;
+		if (window.location.pathname == '/scp-ex')
+			i = 0;
 		else
-			ProcessUl(ul, 'Unnamed Header');
+			i = 1;
+		
+		for (; i < Infinity; i++)
+		{
+			const heading = document.getElementById('toc'+i);
+			if (!heading) break;
+			
+			var ul = heading.nextElementSibling;
+			while (ul && ul.tagName != 'UL' && ul.id != 'toc'+(i + 1))
+				ul = ul.nextElementSibling;
+				
+			if (!ul) break;
+			if (ul.id == 'toc'+(i + 1)) continue;
+			
+			var headingText = heading.getElementsByTagName('span')[0];
+			if (headingText)
+				headingText = headingText.innerHTML
+			else
+				headingText = 'Unnamed Header';
+			ProcessList(ul, 'li', headingText);
+		}
+	
+	} else if (window.location.pathname == '/joke-scps')
+	{
+		// This gets each <ul> inside each element with the 'series' class
+		
+		const divs = document.getElementsByClassName('series');
+		for (var i = 0; i < divs.length; i++)
+		{
+			var uls = divs[i].getElementsByTagName('ul');
+			
+			var headingText = divs[i].getElementsByTagName('h1')[0];
+			if (headingText)
+			{
+				headingText = headingText.getElementsByTagName('span')[0];
+				if (headingText)
+					headingText = headingText.innerHTML;
+				else
+					headingText = 'Unnamed Header';
+			} else
+				headingText = 'Unnamed Header';
+			
+			for (var j = 0; j < uls.length; j++)
+			{
+				
+				ProcessList(uls[j], 'li', headingText+' '+j);
+			}
+		}
+	
+	} else if (window.location.pathname == '/scp-001')
+	{
+		/*	For now, I can only do the old 'release order' listing, that shows when you click the link in
+			the top corner, as the 'random' listing is in an <iframe> from a different domain, which makes
+			it untouchable for security reasons.
+			It may be possible with a bit of trickery, though */
+		
+		var list = document.getElementById('wiki-tab-0-1');
+		ProcessList(list, 'p', 'Release Order');
 	}
 }
