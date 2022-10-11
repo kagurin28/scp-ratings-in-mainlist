@@ -1,0 +1,19 @@
+{
+	"manifest_version": 2,
+	"name": "SCP Ratings in Mainlist",
+	"version": "1.0",
+	"author": "Oliver Robey",
+	
+	"description": "Shows the rating of the SCP in the mainlist (SCP Series, SCP Series 2, etc). Also works on the Tales Edition pages. This makes it easier to find good articles to read.",
+	
+	"icons": {
+		"48": "icon-48.png"
+	},
+	
+	"content_scripts": [
+		{
+			"matches": ["https://scp-wiki.wikidot.com/scp-series*"],
+			"js": ["scp-ratings-in-mainlist.js"]
+		}
+	]
+}
