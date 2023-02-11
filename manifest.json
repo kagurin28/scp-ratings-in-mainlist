@@ -13,14 +13,17 @@
 	"content_scripts": [
 		{
 			"matches": [
-				"https://scp-wiki.wikidot.com/scp-series*",
-				"https://scp-wiki.wikidot.com/joke-scps*",
-				"https://scp-wiki.wikidot.com/scp-ex",
-				"https://scp-wiki.wikidot.com/explained-scps-tales-edition",
-				"https://scp-wiki.wikidot.com/scp-001"
+				"https://scp-wiki.wikidot.com/*"
 			],
 			
 			"js": ["scp-ratings-in-mainlist.js"]
 		}
+	],
+	
+	"permissions": [
+		"https://scp-wiki.wikidot.com/*",
+		"cookies",
+		"storage",
+		"unlimitedStorage"
 	]
 }
