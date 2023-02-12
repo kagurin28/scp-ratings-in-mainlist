@@ -10,8 +10,8 @@ const RATINGHIGHEST_COLOR = 'yellow';
 const CENSOR_BAR_MIN_LEN = 3;
 const CENSOR_BAR_MAX_LEN = 6;
 
-// How long, in milliseconds, the cache is valid for (default two months)
-const CACHE_EXPIRES = 1000 * 60 * 60 * 24 * 60;
+// How long, in milliseconds, the cache is valid for (default three months)
+const CACHE_EXPIRES = 1000 * 60 * 60 * 24 * 90;
 
 const domParser = new DOMParser();
 
@@ -61,6 +61,12 @@ function CensoredText()
 	}
 }
 
+function AddPlus(num)
+{
+	if (num > 0) return '+'+num;
+	else return num;
+}
+
 function ScpPathToMainList(path)
 {
 	let scpNo = path.match(/\/scp-((?!0{3,})\d{3,})/);
@@ -75,8 +81,25 @@ function ScpPathToMainList(path)
 		return '/scp-series-'+series;
 }
 
+function MakeTitleFromInfo(info)
+{
+	let title = '';
+	if (info.altTitle)
+		title = info.altTitle+' ';
+	else if (info.title)
+		title = info.title+' ';
+	
+	if (info.author)
+		title += 'by '+info.author+' ';
+	if (info.rating)
+		title += '('+AddPlus(info.rating)+')';
+	
+	return title;
+}
+
 
 // SCRAPING FUNCTIONS
+// The alternate title is the title from the mainlist, and is only for SCPs
 function ScrapeAltTitleFromP(page, path)
 {
 	const as = page.getElementsByTagName('a');
@@ -85,14 +108,12 @@ function ScrapeAltTitleFromP(page, path)
 		if (as[i].pathname == path)
 		{
 			const text = as[i].parentElement.innerText;
-			let m = text.match(/.* - (.*)/)[1];
-			if (!m)
-				m = text; // If it is not normal (doesn't contain ' - '), then just use the whole thing, link and all
-			n = m.match(/(.*) by Loading\.\.\..*/)[1];
-			if (n)
-				return n;
-			else
+			m = text.match(/(.*) by Loading\.\.\..*/)[1]; /*	This will be added by the extension, and this is
+																the simplist way to remove it */
+			if (m)
 				return m;
+			else
+				return text;
 		}
 	}
 	return;
@@ -124,15 +145,25 @@ function ScrapeAltTitle(path, callbackSuccess, callbackFail)
 	return true;
 }
 
-function ScrapeScpRating(page)
+function ScrapeRating(page)
 {
 	const rating = page.getElementsByClassName('prw54353')[0]; // Don't even ask me why they use this class name
 	if (rating)
 		return +rating.innerHTML;
 }
 
+function ScrapeTitle(page)
+{
+	let title = page.getElementById('page-title');
+	if (!title)
+		return;
+	title = title.innerHTML.match(/\n *(.*)\n */)[1]; // The title is in a sea of whitespaces with some newlines
+	if (title)
+		return title;
+}
+
 // Takes an unparsed page instead of parsed like all the other functions
-function ScrapeScpAuthor(page, callbackSuccess, callbackFail)
+function ScrapeAuthor(page, callbackSuccess, callbackFail)
 {
 	const wikidotPageId = page.match(/WIKIREQUEST\.info\.pageId = (.*);/)[1];
 	if (!wikidotPageId) { callbackFail(); return false; }
@@ -148,7 +179,7 @@ function ScrapeScpAuthor(page, callbackSuccess, callbackFail)
 		if (jsonResponse.body)
 		{
 			const rows = domParser.parseFromString(jsonResponse.body, 'text/html').getElementsByClassName('page-history')[0].rows;
-			author = rows[rows.length - 1].cells[4].getElementsByTagName('a')[1].innerHTML;
+			author = rows[rows.length - 1].cells[4].getElementsByTagName('a')[1].innerText;
 			
 			callbackSuccess(author);
 		} else { callbackFail(); return false; }
@@ -171,28 +202,35 @@ function ScrapeScpAuthor(page, callbackSuccess, callbackFail)
 	return true;
 }
 
-// Gets the author and rating
-function ScrapeScpPageData(path, callback)
+// Gets the rating, title, and author
+function ScrapePageData(path, callbackSuccess, callbackFail)
 {
 	ajax(SITE+path, function(response)
 	{ // Success
 		
 		let retVal = {};
 		const htmlResp = domParser.parseFromString(response, 'text/html');
+		const title = ScrapeTitle(htmlResp);
+		if (title)
+			retVal.title = title;
+		else
+			console.warn('Could not scrape title for '+path);
 		
-		const rating = ScrapeScpRating(htmlResp);
+		const rating = ScrapeRating(htmlResp);
 		if (rating)
 			retVal.rating = rating;
-		else
-			console.warn('Could not get rating for '+path);
 		
-		ScrapeScpAuthor(response, function(author)
+		ScrapeAuthor(response, function(author)
 		{
 			retVal.author = author;
-			callback(retVal);
-		}, function(){ console.warn('Could not get author for '+path); });
+			callbackSuccess(retVal);
+		}, function()
+		{
+			console.warn('Could not scrape author for '+path);
+			callbackSuccess(retVal);
+		});
 			
-	}, function(){});
+	}, function(){ console.warn('Could not download page for '+path); callbackFail(); });
 }
 
 // GET WRAPPER
@@ -212,27 +250,25 @@ function GetScpInfo(path, callback)
 			ScrapeAltTitle(path, function(altTitle)
 			{
 				info[path].altTitle = altTitle;
-				ScrapeScpPageData(path, function(data)
+				ScrapePageData(path, function(data)
 				{
 					info[path] = Object.assign(info[path], data);
 					info[path].expires = Date.now() + CACHE_EXPIRES;
 					
 					chrome.storage.local.set(info);
 					callback(info[path]);
-				});
+				}, function(){});
 			
 			}, function()
-			{ // Non-SCP pages (e.g. tales) do not have a main list title
-				console.log('Could not get main list title for '+path);
-				
-				ScrapeScpPageData(path, function(data)
+			{ // Non-SCP pages (e.g. tales) do not have an alternate title
+				ScrapePageData(path, function(data)
 				{
 					info[path] = data;
 					info[path].expires = Date.now() + CACHE_EXPIRES;
 					
 					chrome.storage.local.set(info);
 					callback(info[path]);
-				});
+				}, function(){});
 			});
 		}
 	});
@@ -243,24 +279,37 @@ function CreateRatingCss()
 {
 	let style = document.createElement('style');
 	style.type = 'text/css';
-	style.innerHTML = '	.rating { position: absolute; top: 0%; right: 0%; } \
-						.rating1 { font-weight: bold; } \
-						.rating2 { font-weight: bold; color: '+RATING2_COLOR+'; } \
-						.ratingHighest { font-weight: bold; color: '+RATINGHIGHEST_COLOR+'; }';
+	style.innerHTML = 
+		'.rating { position: absolute; top: 0%; right: 0%; }'+
+		'.rating1 { font-weight: bold; }'+
+		'.rating2 { font-weight: bold; color: '+RATING2_COLOR+'; }'+
+		'.ratingHighest { font-weight: bold; color: '+RATINGHIGHEST_COLOR+'; }';
 	
 	document.getElementsByTagName('head')[0].appendChild(style);
 }
 
 function CreateRatingDisplay(parent, path)
 {
+	const is001 = window.location.pathname == '/scp-001';
 	parent.style.position = 'relative'; // Needed for absolute positioning
 	
-	const authorElementCont = document.createElement('i');
-	authorElementCont.innerHTML = ' by ';
-	const authorElement = document.createElement('span');
-	authorElement.innerHTML = 'Loading...';
-	authorElementCont.appendChild(authorElement);
-	parent.appendChild(authorElementCont);
+	let authorElementCont, authorElement;
+	
+	if (!is001) // The 001 page alread has the authors
+	{
+		authorElementCont = document.createElement('i');
+		authorElementCont.innerHTML = ' by ';
+		authorElement = document.createElement('span');
+		authorElement.innerHTML = 'Loading...';
+		authorElementCont.appendChild(authorElement);
+		
+		// We need to insert this before any <ul>s, so it doesn't appear at the bottom
+		const ul = parent.getElementsByTagName('ul')[0];
+		if (ul)
+			parent.insertBefore(authorElementCont, ul);
+		else
+			parent.appendChild(authorElementCont);
+	}
 	
 	const ratingElement = document.createElement('span');
 	ratingElement.classList.add('rating');
@@ -278,18 +327,40 @@ function CreateRatingDisplay(parent, path)
 			else if (info.rating >= RATINGHIGHEST_MIN)
 				ratingElement.classList.add('ratingHighest');
 			
-			if (info.rating > 0)
-				ratingElement.innerHTML = '+'+info.rating;
-			else
-				ratingElement.innerHTML = info.rating;
+			ratingElement.innerHTML = AddPlus(info.rating);
 		} else
 			ratingElement.remove();
 		
-		if (info.author)
-			authorElement.innerHTML = info.author;
-		else
-			authorElement.innerHTML = CensoredText();
+		if (!is001)
+		{
+			if (info.author)
+				authorElement.innerHTML = info.author;
+			else
+				authorElementCont.remove();
+		}
 	});
+}
+
+function LinkHoverHandler(event)
+{
+	const path = this.pathname;
+	if (path && this.protocol+'//'+this.host == SITE && !this.title) // Make sure that we're not overwriting an actual title
+	{
+		GetScpInfo(path, (info) =>
+		{
+			let title = MakeTitleFromInfo(info);
+			if (title)
+				this.title = title;
+		});
+	}
+	this.removeEventListener('mouseover', LinkHoverHandler);
+}
+
+function AddLinkHoverInfo()
+{
+	let as = document.getElementsByTagName('a');
+	for (let i = 0, l = as.length; i < l; i++)
+		as[i].addEventListener('mouseover', LinkHoverHandler);
 }
 
 function ProcessList(ul, itemType)
@@ -299,10 +370,10 @@ function ProcessList(ul, itemType)
 	{
 		const scpLink = items[i].getElementsByTagName('a')[0];
 		
-		if (scpLink)
+		if (scpLink && scpLink.pathname && scpLink.protocol+'//'+scpLink.host == SITE)
 			CreateRatingDisplay(items[i], scpLink.pathname);
 		else
-			console.warn('No link!');
+			console.warn('Non-valid or missing link.');
 	}
 }
 
@@ -316,10 +387,8 @@ if (window.location.pathname.match(/^\/((scp-series(-[0-9]+)?(-tales-edition)?)|
 		// This gets the <ul> immediatly following each header
 		
 		let i;
-		if (window.location.pathname == '/scp-ex')
-			i = 0;
-		else
-			i = 1;
+		if (window.location.pathname == '/scp-ex') i = 0;
+		else i = 1;
 		
 		for (; i < Infinity; i++)
 		{
@@ -360,3 +429,18 @@ if (window.location.pathname.match(/^\/((scp-series(-[0-9]+)?(-tales-edition)?)|
 		ProcessList(list, 'p');
 	}
 }
+
+// Set the title of SCP pages to the main list title
+if (window.location.pathname.match(/\/scp-((?!0{3,})\d{3,})/))
+{
+	GetScpInfo(window.location.pathname, function(info)
+	{
+		let title = MakeTitleFromInfo(info);
+		if (!title)
+			return;
+		title += ' - SCP Foundation';
+		document.title = title;
+	});
+}
+
+AddLinkHoverInfo();
