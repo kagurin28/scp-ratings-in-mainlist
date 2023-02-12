@@ -25,5 +25,11 @@
 		"cookies",
 		"storage",
 		"unlimitedStorage"
-	]
+	],
+	
+	"applications": {
+		"gecko": {
+			"id": "scp-ratings-in-mainlist@example.com"
+		}
+	}
 }

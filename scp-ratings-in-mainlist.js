@@ -108,10 +108,10 @@ function ScrapeAltTitleFromP(page, path)
 		if (as[i].pathname == path)
 		{
 			const text = as[i].parentElement.innerText;
-			m = text.match(/(.*) by Loading\.\.\..*/)[1]; /*	This will be added by the extension, and this is
-																the simplist way to remove it */
+			m = text.match(/(.*) by Loading\.\.\..*/); /*	This will be added by the extension, and this is
+															the simplist way to remove it */
 			if (m)
-				return m;
+				return m[1];
 			else
 				return text;
 		}
@@ -147,9 +147,9 @@ function ScrapeAltTitle(path, callbackSuccess, callbackFail)
 
 function ScrapeRating(page)
 {
-	const rating = page.getElementsByClassName('prw54353')[0]; // Don't even ask me why they use this class name
+	const rating = page.getElementsByClassName('prw54353'); // Don't even ask me why they use this class name
 	if (rating)
-		return +rating.innerHTML;
+		return +(rating[0].innerHTML);
 }
 
 function ScrapeTitle(page)
@@ -178,10 +178,23 @@ function ScrapeAuthor(page, callbackSuccess, callbackFail)
 		const jsonResponse = JSON.parse(response);
 		if (jsonResponse.body)
 		{
-			const rows = domParser.parseFromString(jsonResponse.body, 'text/html').getElementsByClassName('page-history')[0].rows;
-			author = rows[rows.length - 1].cells[4].getElementsByTagName('a')[1].innerText;
+			let a = domParser.parseFromString(jsonResponse.body, 'text/html');
+			if (!a) { callbackFail(); return false; }
+			a = a.getElementsByClassName('page-history');
+			if (!a) { callbackFail(); return false; }
+			a = a[0].rows;
+			if (!a) { callbackFail(); return false; }
+			a = a[a.length - 1].cells[4];
+			if (!a) { callbackFail(); return false; }
+			a = a.getElementsByTagName('a');
+			if (!a) { callbackFail(); return false; }
+			a = a[1];
+			if (!a) { callbackFail(); return false; }
+			a = a.innerText;
+			if (!a) { callbackFail(); return false; }
+			// Better safe than sorry
 			
-			callbackSuccess(author);
+			callbackSuccess(a);
 		} else { callbackFail(); return false; }
 	
 	}, callbackFail);
