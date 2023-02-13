@@ -148,7 +148,7 @@ function ScrapeAltTitle(path, callbackSuccess, callbackFail)
 function ScrapeRating(page)
 {
 	const rating = page.getElementsByClassName('prw54353'); // Don't even ask me why they use this class name
-	if (rating)
+	if (rating.length > 0)
 		return +(rating[0].innerHTML);
 }
 
@@ -180,17 +180,17 @@ function ScrapeAuthor(page, callbackSuccess, callbackFail)
 		{
 			let a = domParser.parseFromString(jsonResponse.body, 'text/html');
 			if (!a) { callbackFail(); return false; }
+			
 			a = a.getElementsByClassName('page-history');
-			if (!a) { callbackFail(); return false; }
+			if (a.length < 1) { callbackFail(); return false; }
+			
 			a = a[0].rows;
-			if (!a) { callbackFail(); return false; }
-			a = a[a.length - 1].cells[4];
-			if (!a) { callbackFail(); return false; }
-			a = a.getElementsByTagName('a');
-			if (!a) { callbackFail(); return false; }
-			a = a[1];
-			if (!a) { callbackFail(); return false; }
-			a = a.innerText;
+			if (a.length < 1) { callbackFail(); return false; }
+			
+			a = a[a.length - 1].cells;
+			if (a.length < 5) { callbackFail(); return false; }
+			
+			a = a[4].innerText;
 			if (!a) { callbackFail(); return false; }
 			// Better safe than sorry
 			
@@ -443,17 +443,14 @@ if (window.location.pathname.match(/^\/((scp-series(-[0-9]+)?(-tales-edition)?)|
 	}
 }
 
-// Set the title of SCP pages to the main list title
-if (window.location.pathname.match(/\/scp-((?!0{3,})\d{3,})/))
+// Put more info in the titles of pages
+GetScpInfo(window.location.pathname, function(info)
 {
-	GetScpInfo(window.location.pathname, function(info)
-	{
-		let title = MakeTitleFromInfo(info);
-		if (!title)
-			return;
-		title += ' - SCP Foundation';
-		document.title = title;
-	});
-}
+	let title = MakeTitleFromInfo(info);
+	if (!title)
+		return;
+	title += ' - SCP Foundation';
+	document.title = title;
+});
 
 AddLinkHoverInfo();
