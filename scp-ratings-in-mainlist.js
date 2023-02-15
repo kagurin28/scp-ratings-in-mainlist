@@ -1,4 +1,5 @@
-const SITE = 'https://scp-wiki.wikidot.com';
+const HOST = 'scp-wiki.wikidot.com';
+const HOST_REGEX = /(www.)?(scp-wiki.wikidot.com|scpwiki.com|scp-wiki.net|scp-wiki.com)/;
 
 const RATING1_MIN = 100;
 const RATING2_MIN = 400;
@@ -105,7 +106,7 @@ function ScrapeAltTitleFromP(page, path)
 	const as = page.getElementsByTagName('a');
 	for (let i = 0, l = as.length; i < l; i++)
 	{
-		if (as[i].pathname == path)
+		if (as[i].pathname == path && !as[i].hash)
 		{
 			const text = as[i].parentElement.innerText;
 			m = text.match(/(.*) by Loading\.\.\..*/); /*	This will be added by the extension, and this is
@@ -134,8 +135,9 @@ function ScrapeAltTitle(path, callbackSuccess, callbackFail)
 		} else { callbackFail(); return false; }
 	}
 	
-	ajax(SITE+mainList, function(page)
+	ajax('https://'+HOST+mainList, function(page)
 	{ // Success
+		console.log(page);
 		let altTitle = ScrapeAltTitleFromP(domParser.parseFromString(page, 'text/html'), path);
 		if (altTitle)
 			callbackSuccess(altTitle);
@@ -199,7 +201,7 @@ function ScrapeAuthor(page, callbackSuccess, callbackFail)
 	
 	}, callbackFail);
 	
-	httpRequest.open('POST', SITE+'/ajax-module-connector.php');
+	httpRequest.open('POST', 'https://'+HOST+'/ajax-module-connector.php');
 	
 	httpRequest.withCredentials = true; // Important for the cookie
 	httpRequest.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
@@ -218,7 +220,7 @@ function ScrapeAuthor(page, callbackSuccess, callbackFail)
 // Gets the rating, title, and author
 function ScrapePageData(path, callbackSuccess, callbackFail)
 {
-	ajax(SITE+path, function(response)
+	ajax('https://'+HOST+path, function(response)
 	{ // Success
 		
 		let retVal = {};
@@ -357,7 +359,7 @@ function CreateRatingDisplay(parent, path)
 function LinkHoverHandler(event)
 {
 	const path = this.pathname;
-	if (path && this.protocol+'//'+this.host == SITE && !this.title) // Make sure that we're not overwriting an actual title
+	if (path && this.host.match(HOST_REGEX) && !this.title) // Make sure that we're not overwriting an actual title
 	{
 		GetScpInfo(path, (info) =>
 		{
@@ -383,7 +385,7 @@ function ProcessList(ul, itemType)
 	{
 		const scpLink = items[i].getElementsByTagName('a')[0];
 		
-		if (scpLink && scpLink.pathname && scpLink.protocol+'//'+scpLink.host == SITE)
+		if (scpLink && scpLink.pathname && scpLink.host.match(HOST_REGEX))
 			CreateRatingDisplay(items[i], scpLink.pathname);
 		else
 			console.warn('Non-valid or missing link.');
