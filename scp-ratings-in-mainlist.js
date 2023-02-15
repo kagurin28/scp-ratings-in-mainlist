@@ -137,7 +137,6 @@ function ScrapeAltTitle(path, callbackSuccess, callbackFail)
 	
 	ajax('https://'+HOST+mainList, function(page)
 	{ // Success
-		console.log(page);
 		let altTitle = ScrapeAltTitleFromP(domParser.parseFromString(page, 'text/html'), path);
 		if (altTitle)
 			callbackSuccess(altTitle);
