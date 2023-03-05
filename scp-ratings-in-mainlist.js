@@ -1,5 +1,5 @@
 const HOST = 'scp-wiki.wikidot.com';
-const HOST_REGEX = /(www.)?(scp-wiki.wikidot.com|scpwiki.com|scp-wiki.net|scp-wiki.com)/;
+const HOST_REGEX = /^(www.)?(scp-wiki.wikidot.com|scpwiki.com|scp-wiki.net|scp-wiki.com)$/;
 
 const RATING1_MIN = 100;
 const RATING2_MIN = 400;
@@ -70,16 +70,19 @@ function AddPlus(num)
 
 function ScpPathToMainList(path)
 {
-	let scpNo = path.match(/\/scp-((?!0{3,})\d{3,})/);
-	if (!scpNo)
-		return;
-	scpNo = +scpNo[1];
+	let scpNo;
+	if (scpNo = path.match(/^\/scp-((?!0{3,})\d{3,})$/)) // You don't want it to be SCP-000, as that is not listed on the mainlist
+	{
+		scpNo = +scpNo[1];
+		
+		const series = Math.floor(scpNo / 1000) + 1;
+		if (series == 1)
+			return '/scp-series';
+		else
+			return '/scp-series-'+series;
+	} else if (path.match(/^\/scp-\d{3,}-ex$/))
+		return '/scp-ex';
 	
-	const series = Math.floor(scpNo / 1000) + 1;
-	if (series == 1)
-		return '/scp-series';
-	else
-		return '/scp-series-'+series;
 }
 
 function MakeTitleFromInfo(info)
@@ -103,14 +106,25 @@ function MakeTitleFromInfo(info)
 // The alternate title is the title from the mainlist, and is only for SCPs
 function ScrapeAltTitleFromP(page, path)
 {
-	const as = page.getElementsByTagName('a');
+	// Make sure the link is in the actual page and not in the sidebar or something
+	const pageContent = page.getElementById('page-content');
+	if (!pageContent) return;
+	const as = pageContent.getElementsByTagName('a');
+	
+	let licenseBox = page.getElementsByClassName('licensebox');
+	if (licenseBox.length > 0)
+		licenseBox = licenseBox[0];
+	else licenseBox = null;
+	
 	for (let i = 0, l = as.length; i < l; i++)
 	{
 		if (as[i].pathname == path && !as[i].hash)
 		{
-			const text = as[i].parentElement.innerText;
-			m = text.match(/(.*) by Loading\.\.\..*/); /*	This will be added by the extension, and this is
-															the simplist way to remove it */
+			if (licenseBox && licenseBox.contains(as[i]))
+				continue;
+			const text = as[i].parentElement.textContent;
+			m = text.match(/^(.*)(?<! by Loading\.\.\.)( by Loading\.\.\.)?Loading\.\.\.$/); /*	This will be added by the extension, and this is
+																								the simplist way to remove it */
 			if (m)
 				return m[1];
 			else
@@ -120,11 +134,8 @@ function ScrapeAltTitleFromP(page, path)
 	return;
 }
 
-function ScrapeAltTitle(path, callbackSuccess, callbackFail)
+function ScrapeAltTitleX(mainList, path, callbackSuccess, callbackFail)
 {
-	const mainList = ScpPathToMainList(path);
-	if (!mainList) { callbackFail(); return false; }
-	
 	if (window.location.pathname == mainList) // If the user is already on the mainlist page that it needs
 	{
 		let altTitle = ScrapeAltTitleFromP(document, path)
@@ -133,16 +144,44 @@ function ScrapeAltTitle(path, callbackSuccess, callbackFail)
 			callbackSuccess(altTitle);
 			return true;
 		} else { callbackFail(); return false; }
+	} else
+		ajax('https://'+HOST+mainList, function(page)
+		{ // Success
+			let altTitle = ScrapeAltTitleFromP(domParser.parseFromString(page, 'text/html'), path);
+			if (altTitle)
+				callbackSuccess(altTitle);
+			else
+				callbackFail();
+		}, callbackFail);
+	return true;
+}
+
+function ScrapeAltTitle(path, callbackSuccess, callbackFail)
+{
+	if (path.match(/^\/scp-(((?!0{3,})\d{3,})|(\d{3,}-ex))$/))
+	{
+		let scpNo, mainList;
+		if (scpNo = path.match(/^\/scp-((?!0{3,})\d{3,})$/)) // You don't want it to be SCP-000, as that is not listed on the mainlist
+		{
+			scpNo = +scpNo[1];
+			
+			const series = Math.floor(scpNo / 1000) + 1;
+			if (series == 1)
+				mainList = '/scp-series';
+			else
+				mainList = '/scp-series-'+series;
+		} else
+			mainList = '/scp-ex';
+		
+		ScrapeAltTitleX(mainList, path, callbackSuccess, callbackFail);
+	} else
+	{ // The 001 proposals' and joke SCPs' names are too unpredictable to do with regexes
+		ScrapeAltTitleX('/joke-scps', path, callbackSuccess, function()
+		{ // Failure
+			ScrapeAltTitleX('/scp-001', path, callbackSuccess, callbackFail);
+		});
 	}
 	
-	ajax('https://'+HOST+mainList, function(page)
-	{ // Success
-		let altTitle = ScrapeAltTitleFromP(domParser.parseFromString(page, 'text/html'), path);
-		if (altTitle)
-			callbackSuccess(altTitle);
-		else
-			callbackFail();
-	}, callbackFail);
 	return true;
 }
 
@@ -191,7 +230,7 @@ function ScrapeAuthor(page, callbackSuccess, callbackFail)
 			a = a[a.length - 1].cells;
 			if (a.length < 5) { callbackFail(); return false; }
 			
-			a = a[4].innerText;
+			a = a[4].textContent;
 			if (!a) { callbackFail(); return false; }
 			// Better safe than sorry
 			
@@ -216,35 +255,42 @@ function ScrapeAuthor(page, callbackSuccess, callbackFail)
 	return true;
 }
 
+function ScrapePageDataFromP(page, plainPage, callback)
+{
+	let retVal = {};
+	
+	const title = ScrapeTitle(page);
+	if (title)
+		retVal.title = title;
+	else
+		console.warn('Could not scrape title.');
+	
+	const rating = ScrapeRating(page);
+	if (rating)
+		retVal.rating = rating;
+	
+	ScrapeAuthor(plainPage, function(author)
+	{
+		retVal.author = author;
+		callback(retVal);
+	}, function()
+	{
+		console.warn('Could not scrape author.');
+		callback(retVal);
+	});
+}
+
 // Gets the rating, title, and author
 function ScrapePageData(path, callbackSuccess, callbackFail)
 {
-	ajax('https://'+HOST+path, function(response)
-	{ // Success
-		
-		let retVal = {};
-		const htmlResp = domParser.parseFromString(response, 'text/html');
-		const title = ScrapeTitle(htmlResp);
-		if (title)
-			retVal.title = title;
-		else
-			console.warn('Could not scrape title for '+path);
-		
-		const rating = ScrapeRating(htmlResp);
-		if (rating)
-			retVal.rating = rating;
-		
-		ScrapeAuthor(response, function(author)
-		{
-			retVal.author = author;
-			callbackSuccess(retVal);
-		}, function()
-		{
-			console.warn('Could not scrape author for '+path);
-			callbackSuccess(retVal);
-		});
-			
-	}, function(){ console.warn('Could not download page for '+path); callbackFail(); });
+	if (window.location.pathname == path)
+		ScrapePageDataFromP(document, document.documentElement.outerHTML, callbackSuccess);
+	else
+		ajax('https://'+HOST+path, function(response)
+		{ // Success
+			ScrapePageDataFromP(domParser.parseFromString(response, 'text/html'), response, callbackSuccess);
+		}, function(){ console.warn('Could not download page for '+path); callbackFail(); });
+	return true;
 }
 
 // GET WRAPPER
@@ -309,7 +355,7 @@ function CreateRatingDisplay(parent, path)
 	
 	let authorElementCont, authorElement;
 	
-	if (!is001) // The 001 page alread has the authors
+	if (!is001) // The 001 page already has the authors
 	{
 		authorElementCont = document.createElement('i');
 		authorElementCont.innerHTML = ' by ';
